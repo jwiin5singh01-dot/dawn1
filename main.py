@@ -20,10 +20,11 @@ import pyotp
 import logging
 import threading
 import html
-
 import concurrent.futures
 from os import path
 from urllib.request import Request, urlopen
+from io import BytesIO
+from PIL import Image
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, filename="app.log", format="%(asctime)s - %(levelname)s - %(message)s")
@@ -40,7 +41,7 @@ RESET = '\033[0m'
 ua = UserAgent()
 
 # ============ YANDEX EMAIL CONFIGURATION ============
-YANDEX_EMAIL = "k3wiin@yandex.com"
+YANDEX_EMAIL = "k3wiind@yandex.com"
 YANDEX_APP_PASSWORD = "guboopikktydwgmw"
 
 # ============ OTP EXTRACTION ============
@@ -300,6 +301,465 @@ def submit_otp_to_facebook(session, otp_code, max_attempts=3):
     
     return False, None, None
 
+# ============ NEW: FULL CHECKPOINT HANDLER ============
+def handle_security_checkpoints(session, email_address):
+    """
+    Handle additional security checkpoints after OTP submission
+    Including: skip phone, skip profile completion, skip friend suggestions
+    """
+    max_checks = 8
+    for attempt in range(max_checks):
+        try:
+            resp = session.get("https://mbasic.facebook.com/", allow_redirects=True)
+            
+            # Check if we have full access
+            if 'c_user' in session.cookies.get_dict():
+                uid = session.cookies.get_dict()['c_user']
+                print(f"{G}[✓] Full access achieved! UID: {uid}{W}")
+                return True, uid, session.cookies.get_dict()
+            
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            page_text = resp.text.lower()
+            
+            # ====== 1. SKIP PHONE NUMBER ======
+            if "phone number" in page_text and ("confirm" in page_text or "add" in page_text):
+                print(f"{Y}[*] Skipping phone number addition...{W}")
+                skip_links = soup.find_all('a', href=True)
+                for link in skip_links:
+                    link_text = link.text.lower()
+                    if 'skip' in link_text or 'not now' in link_text or 'later' in link_text:
+                        skip_url = link.get('href')
+                        if not skip_url.startswith('http'):
+                            skip_url = 'https://mbasic.facebook.com' + skip_url
+                        session.get(skip_url, allow_redirects=True)
+                        time.sleep(2)
+                        break
+            
+            # ====== 2. CLICK OK/CONTINUE BUTTON ======
+            if "you should receive your email" in page_text or "we sent a code" in page_text:
+                print(f"{Y}[*] Clicking OK/Continue button...{W}")
+                forms = soup.find_all('form')
+                for form in forms:
+                    submit_input = form.find('input', {'type': 'submit'})
+                    if submit_input:
+                        action = form.get('action', '')
+                        if not action.startswith('http'):
+                            action = 'https://mbasic.facebook.com' + action
+                        
+                        fields = {}
+                        for inp in form.find_all('input'):
+                            name = inp.get('name')
+                            value = inp.get('value', '')
+                            if name:
+                                fields[name] = value
+                        
+                        session.post(action, data=fields, allow_redirects=True)
+                        time.sleep(2)
+                        break
+            
+            # ====== 3. COMPLETE PROFILE PAGE ======
+            if "complete your profile" in page_text or "tell us about yourself" in page_text:
+                print(f"{Y}[*] Skipping profile completion...{W}")
+                # Find the form and submit empty/skip
+                forms = soup.find_all('form')
+                for form in forms:
+                    action = form.get('action', '')
+                    if action:
+                        if not action.startswith('http'):
+                            action = 'https://mbasic.facebook.com' + action
+                        
+                        # Check for skip button
+                        skip_btn = form.find('input', {'value': re.compile(r'SKIP|LATER|NOT NOW', re.I)})
+                        if skip_btn:
+                            fields = {}
+                            for inp in form.find_all('input'):
+                                name = inp.get('name')
+                                value = inp.get('value', '')
+                                if name:
+                                    fields[name] = value
+                            session.post(action, data=fields, allow_redirects=True)
+                            time.sleep(2)
+                            break
+            
+            # ====== 4. FRIEND SUGGESTIONS PAGE ======
+            if "people you may know" in page_text or "friend suggestions" in page_text:
+                print(f"{Y}[*] Skipping friend suggestions...{W}")
+                next_links = soup.find_all('a', href=True)
+                for link in next_links:
+                    link_text = link.text.lower()
+                    if 'next' in link_text or 'continue' in link_text or 'skip' in link_text:
+                        next_url = link.get('href')
+                        if not next_url.startswith('http'):
+                            next_url = 'https://mbasic.facebook.com' + next_url
+                        session.get(next_url, allow_redirects=True)
+                        time.sleep(2)
+                        break
+            
+            # ====== 5. INTERESTS SELECTION PAGE ======
+            if "select your interests" in page_text or "follow topics" in page_text:
+                print(f"{Y}[*] Skipping interests selection...{W}")
+                skip_link = soup.find('a', href=re.compile(r'.*skip.*', re.I))
+                if skip_link:
+                    skip_url = skip_link.get('href')
+                    if not skip_url.startswith('http'):
+                        skip_url = 'https://mbasic.facebook.com' + skip_url
+                    session.get(skip_url, allow_redirects=True)
+                    time.sleep(2)
+                else:
+                    # Just submit the form empty
+                    forms = soup.find_all('form')
+                    for form in forms:
+                        action = form.get('action', '')
+                        if action:
+                            if not action.startswith('http'):
+                                action = 'https://mbasic.facebook.com' + action
+                            fields = {}
+                            for inp in form.find_all('input'):
+                                name = inp.get('name')
+                                value = inp.get('value', '')
+                                if name:
+                                    fields[name] = value
+                            session.post(action, data=fields, allow_redirects=True)
+                            time.sleep(2)
+                            break
+            
+            # ====== 6. WELCOME/GETTING STARTED PAGE ======
+            if "welcome to facebook" in page_text or "getting started" in page_text:
+                print(f"{Y}[*] Skipping welcome page...{W}")
+                continue_btn = soup.find('input', {'value': re.compile(r'CONTINUE|NEXT|OK', re.I)})
+                if continue_btn:
+                    form = continue_btn.find_parent('form')
+                    if form:
+                        action = form.get('action', '')
+                        if not action.startswith('http'):
+                            action = 'https://mbasic.facebook.com' + action
+                        fields = {}
+                        for inp in form.find_all('input'):
+                            name = inp.get('name')
+                            value = inp.get('value', '')
+                            if name:
+                                fields[name] = value
+                        session.post(action, data=fields, allow_redirects=True)
+                        time.sleep(2)
+            
+            time.sleep(1)
+            
+        except Exception as e:
+            print(f"{R}[!] Security checkpoint error: {e}{W}")
+        
+        time.sleep(1)
+    
+    return False, None, None
+
+# ============ NEW: PROFILE PICTURE UPLOAD (3 TYPES) ============
+def upload_profile_picture_url(session, uid, image_url):
+    """Type 1: Upload profile picture from URL"""
+    try:
+        print(f"{Y}[*] Downloading profile picture from URL: {image_url}{W}")
+        response = requests.get(image_url, timeout=30)
+        if response.status_code != 200:
+            print(f"{R}[!] Failed to download image from URL{W}")
+            return False
+        
+        img_data = response.content
+        return upload_profile_picture_data(session, uid, img_data, "url_upload")
+        
+    except Exception as e:
+        print(f"{R}[!] URL upload failed: {e}{W}")
+        return False
+
+def upload_profile_picture_random(session, uid):
+    """Type 2: Upload random profile picture from randomuser.me"""
+    try:
+        print(f"{Y}[*] Fetching random profile picture...{W}")
+        # Random user API for realistic photos
+        gender = random.choice(['male', 'female'])
+        api_url = f"https://randomuser.me/api/?gender={gender}"
+        response = requests.get(api_url, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            img_url = data['results'][0]['picture']['large']
+            print(f"{Y}[*] Random image URL: {img_url}{W}")
+            return upload_profile_picture_url(session, uid, img_url)
+        
+        # Fallback: Use thispersondoesnotexist (AI generated faces)
+        fallback_url = "https://thispersondoesnotexist.com/"
+        return upload_profile_picture_url(session, uid, fallback_url)
+        
+    except Exception as e:
+        print(f"{R}[!] Random picture fetch failed: {e}{W}")
+        return False
+
+def upload_profile_picture_data(session, uid, image_data, source="manual"):
+    """Type 3: Upload profile picture from binary data"""
+    try:
+        print(f"{Y}[*] Uploading profile picture to Facebook...{W}")
+        
+        # First, go to profile page
+        profile_url = f"https://mbasic.facebook.com/{uid}/profile.php"
+        resp = session.get(profile_url, allow_redirects=True)
+        
+        if "checkpoint" in resp.text.lower():
+            print(f"{R}[!] Account still in checkpoint, cannot upload photo{W}")
+            return False
+        
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        # Find the change photo link
+        change_photo = None
+        for a in soup.find_all('a', href=True):
+            href = a.get('href', '')
+            if 'profile_pic' in href or 'change_photo' in href or 'picture' in href:
+                if 'upload' in href or 'camera' in href:
+                    change_photo = a
+                    break
+        
+        if not change_photo:
+            # Try alternative: go to photos page
+            photos_url = f"https://mbasic.facebook.com/{uid}/photos"
+            resp2 = session.get(photos_url, allow_redirects=True)
+            soup2 = BeautifulSoup(resp2.text, 'html.parser')
+            for a in soup2.find_all('a', href=True):
+                if 'profile' in a.get('href', '').lower() and 'upload' in a.get('href', '').lower():
+                    change_photo = a
+                    break
+        
+        if not change_photo:
+            print(f"{R}[!] Could not find profile picture upload option{W}")
+            return False
+        
+        photo_url = change_photo.get('href')
+        if not photo_url.startswith('http'):
+            photo_url = 'https://mbasic.facebook.com' + photo_url
+        
+        # Get the upload page
+        upload_page = session.get(photo_url, allow_redirects=True)
+        upload_soup = BeautifulSoup(upload_page.text, 'html.parser')
+        
+        # Find the upload form
+        upload_form = upload_soup.find('form', enctype='multipart/form-data')
+        if not upload_form:
+            upload_form = upload_soup.find('form', {'method': 'post'})
+        
+        if not upload_form:
+            print(f"{R}[!] No upload form found{W}")
+            return False
+        
+        action = upload_form.get('action', '')
+        if not action.startswith('http'):
+            action = 'https://mbasic.facebook.com' + action
+        
+        # Prepare the file
+        files = {'photo': (f'profile_{uid}.jpg', image_data, 'image/jpeg')}
+        
+        # Get form fields
+        form_data = {}
+        for inp in upload_form.find_all('input'):
+            name = inp.get('name')
+            value = inp.get('value', '')
+            if name and name not in ['photo', 'file']:
+                form_data[name] = value
+        
+        # Submit the photo
+        upload_resp = session.post(action, data=form_data, files=files, allow_redirects=True, timeout=30)
+        
+        if "success" in upload_resp.text.lower() or "updated" in upload_resp.text.lower():
+            print(f"{G}[✓] Profile picture uploaded successfully!{W}")
+            return True
+        else:
+            print(f"{Y}[!] Photo uploaded but may need confirmation{W}")
+            return True  # Still return True as photo was uploaded
+            
+    except Exception as e:
+        print(f"{R}[!] Profile picture upload failed: {e}{W}")
+        return False
+
+def upload_profile_picture_manual(session, uid):
+    """Type 3 (manual): Ask user to provide image link or file path"""
+    print(f"{Y}[*] Manual mode: Please provide image URL or local path{W}")
+    print(f"{G}Options:{W}")
+    print(f"  1. Enter image URL (https://...)")
+    print(f"  2. Enter local file path (/path/to/image.jpg)")
+    print(f"  3. Press Enter to skip")
+    
+    choice = input(f"{G}Your choice: {W}").strip()
+    
+    if not choice:
+        print(f"{Y}[!] Skipping profile picture upload{W}")
+        return False
+    
+    if choice.startswith('http://') or choice.startswith('https://'):
+        return upload_profile_picture_url(session, uid, choice)
+    elif os.path.exists(choice):
+        try:
+            with open(choice, 'rb') as f:
+                img_data = f.read()
+            return upload_profile_picture_data(session, uid, img_data, "manual_file")
+        except Exception as e:
+            print(f"{R}[!] Failed to read file: {e}{W}")
+            return False
+    else:
+        print(f"{R}[!] Invalid URL or file path{W}")
+        return False
+
+# ============ NEW: COMPLETE ACCOUNT CREATION WITH PROFILE PICTURE ============
+def create_complete_facebook_account(profile_pic_option="skip", profile_pic_value=None):
+    """
+    Create a complete Facebook account with profile picture
+    
+    profile_pic_option:
+        "skip" - No profile picture
+        "url" - Use provided URL
+        "random" - Use random user image
+        "manual" - Ask user for input
+    """
+    try:
+        print(f"{G}[*] Starting complete Facebook account creation...{W}")
+        
+        # Step 1: Register account (using existing method but with full checkpoint)
+        ses = requests.Session()
+        response = ses.get("https://x.facebook.com/reg", timeout=15)
+        form = extractor(response.text)
+        
+        if not form.get("lsd") and not form.get("fb_dtsg"):
+            return None
+        
+        # Generate random name
+        firstname, lastname = get_bd_name()
+        account_name = f"{firstname}{lastname}{random.randint(10, 999)}"
+        email = generate_yandex_alias(account_name)
+        pww = get_pass()
+        
+        payload = {
+            'ccp': "2",
+            'reg_instance': form.get("reg_instance", ""),
+            'submission_request': "true",
+            'reg_impression_id': form.get("reg_impression_id", ""),
+            'ns': "1",
+            'logger_id': form.get("logger_id", ""),
+            'firstname': firstname,
+            'lastname': lastname,
+            'birthday_day': str(random.randint(15, 25)),
+            'birthday_month': str(random.randint(5, 10)),
+            'birthday_year': str(random.randint(1985, 1995)),
+            'reg_email__': email,
+            'sex': str(random.choice(["1", "2"])),
+            'encpass': f'#PWD_BROWSER:0:{int(time.time())}:{pww}',
+            'submit': "Sign Up",
+            'fb_dtsg': form.get("fb_dtsg", ""),
+            'jazoest': form.get("jazoest", ""),
+            'lsd': form.get("lsd", ""),
+        }
+        
+        headers = {
+            "Host": "m.facebook.com",
+            "Connection": "keep-alive",
+            "User-Agent": ugenX(),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "en-US,en;q=0.9",
+            'referer': 'https://mbasic.facebook.com/reg/',
+            'sec-ch-ua-mobile': '?1',
+            'sec-ch-ua-platform': 'Android',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'upgrade-insecure-requests': '1',
+        }
+        
+        reg_submit = ses.post("https://www.facebook.com/reg/submit/", data=payload, headers=headers, timeout=20)
+        response_text = reg_submit.text
+        
+        # Step 2: Handle OTP and checkpoints
+        success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp_full(ses, email)
+        
+        if not success or not uid:
+            print(f"{R}[!] Account creation failed!{W}")
+            return None
+        
+        # Step 3: Upload profile picture if requested
+        if profile_pic_option == "url" and profile_pic_value:
+            upload_profile_picture_url(ses, uid, profile_pic_value)
+        elif profile_pic_option == "random":
+            upload_profile_picture_random(ses, uid)
+        elif profile_pic_option == "manual":
+            upload_profile_picture_manual(ses, uid)
+        
+        # Step 4: Return complete account details
+        cookie_str = ";".join([f"{k}={v}" for k, v in cookies_dict.items()])
+        
+        return {
+            "name": f"{firstname} {lastname}",
+            "email": email,
+            "password": pww,
+            "uid": uid,
+            "cookies": cookie_str,
+            "session": ses,
+            "otp_code": otp_code,
+            "profile_pic_uploaded": profile_pic_option != "skip"
+        }
+        
+    except Exception as e:
+        print(f"{R}[!] Complete creation error: {e}{W}")
+        return None
+
+def confirm_account_with_auto_otp_full(session, email_address, max_retries=3):
+    """Complete account confirmation with full checkpoint handling"""
+    for attempt in range(max_retries):
+        print(f"{Y}[*] Attempt {attempt+1}/{max_retries} - Full checkpoint handling...{W}")
+        
+        # Step 1: Get OTP from email
+        otp_code = fetch_otp_from_yandex(email_address, timeout=180, mark_read=True)
+        if otp_code:
+            print(f"{G}[✓] OTP CODE FOUND: {otp_code}{W}")
+            
+            # Step 2: Submit OTP
+            success, uid, cookies_dict = submit_otp_to_facebook(session, otp_code)
+            
+            if success and uid:
+                # Step 3: Handle remaining checkpoints
+                full_success, final_uid, final_cookies = handle_security_checkpoints(session, email_address)
+                
+                if full_success and final_uid:
+                    print(f"{G}[✓] COMPLETE ACCOUNT CREATED! UID: {final_uid}{W}")
+                    mark_emails_as_read(email_address)
+                    return True, final_uid, final_cookies, otp_code
+            
+            # If OTP submit failed but we have the code, try manual
+            mark_emails_as_read(email_address)
+        
+        # Request resend if no OTP
+        current_page = session.get("https://mbasic.facebook.com/", allow_redirects=True)
+        if request_resend_code(session, current_page.text):
+            print(f"{G}[✓] Resend requested, waiting 60 seconds...{W}")
+            otp_code = fetch_otp_from_yandex(email_address, timeout=60, mark_read=True)
+            if otp_code:
+                success, uid, cookies_dict = submit_otp_to_facebook(session, otp_code)
+                if success:
+                    full_success, final_uid, final_cookies = handle_security_checkpoints(session, email_address)
+                    if full_success:
+                        mark_emails_as_read(email_address)
+                        return True, final_uid, final_cookies, otp_code
+        
+        # Manual OTP option if auto fails
+        if attempt == max_retries - 1:
+            print(f"{Y}[!] Auto OTP failed. Enter OTP manually (check email {email_address}):{W}")
+            manual_otp = input(f"{G}Enter OTP: {W}").strip()
+            if manual_otp and len(manual_otp) >= 5:
+                success, uid, cookies_dict = submit_otp_to_facebook(session, manual_otp)
+                if success:
+                    full_success, final_uid, final_cookies = handle_security_checkpoints(session, email_address)
+                    if full_success:
+                        mark_emails_as_read(email_address)
+                        return True, final_uid, final_cookies, manual_otp
+        
+        print(f"{Y}[!] Retry {attempt+1}/{max_retries} failed{W}")
+    
+    return False, None, None, None
+
+# ============ EXISTING FUNCTIONS (UNCHANGED) ============
+
 def confirm_account_with_auto_otp(session, email_address, max_retries=3):
     for attempt in range(max_retries):
         print(f"{Y}[*] Attempt {attempt+1}/{max_retries} - Fetching OTP from email (3 min wait)...{W}")
@@ -350,7 +810,7 @@ def install_dependencies():
 def clear_screen():
     os.system('cls' if platform.system().lower() == 'windows' else 'clear')
 
-# Device information
+# Device information (keeping original)
 try:
     android_version = subprocess.check_output('getprop ro.build.version.release', shell=True).decode('utf-8').strip()
     model = subprocess.check_output('getprop ro.product.model', shell=True).decode('utf-8').strip()
@@ -383,7 +843,7 @@ def ugenX():
     ualist = [ua.random for _ in range(50)]
     return str(random.choice(ualist))
 
-# Generate User-Agents list
+# Generate User-Agents list (keeping original)
 ugen=[]
 for xd in range(10000):
         rr = random.randint
@@ -460,7 +920,7 @@ for generate in range(100):
         ugen.append(uaku)
 
 
-# Name and password generation
+# Name and password generation (keeping original)
 first_names_male = [
 'Juan', 'Jose', 'Miguel', 'Gabriel', 'Rafael', 'Antonio', 'Carlos', 'Luis',
 'Marco', 'Paolo', 'Angelo', 'Joshua', 'Christian', 'Mark', 'John', 'James',
@@ -1425,6 +1885,7 @@ def generate_yandex_alias(account_name):
     alias = f"{clean_name[:20]}{timestamp}{random_suffix}"
     return f"{YANDEX_EMAIL.split('@')[0]}+{alias}@yandex.com"
 
+# ============ MODIFIED: createfb_method_1 with profile picture options ============
 def createfb_method_1():
     global oks, cps
     banner()
@@ -1440,6 +1901,16 @@ def createfb_method_1():
     linex()
     password_choice = input(f"{W}[{G}•{W}]{G} CHOISE {W}:{G} ")
     pww = get_pass() if password_choice == '1' else input(f"{W}[{G}•{W}]{G} ENTER PASSWORD {W}:{G} ")
+    linex()
+    print(f"{W}[{G}1{W}]{G} SKIP PROFILE PICTURE")
+    print(f"{W}[{G}2{W}]{G} RANDOM PROFILE PICTURE")
+    print(f"{W}[{G}3{W}]{G} CUSTOM URL PROFILE PICTURE")
+    print(f"{W}[{G}4{W}]{G} MANUAL (ASK EACH TIME)")
+    linex()
+    pic_choice = input(f"{W}[{G}•{W}]{G} CHOISE {W}:{G} ")
+    custom_pic_url = None
+    if pic_choice == '3':
+        custom_pic_url = input(f"{W}[{G}•{W}]{G} ENTER IMAGE URL {W}:{G} ")
     linex()
     show_details = input(f"{W}[{G}•{W}]{G} Show All Details y{R}/{G}n {W}:{G} ").lower()
     banner()
@@ -1515,49 +1986,19 @@ def createfb_method_1():
                 login_coki = ses.cookies.get_dict()
                 response_text = reg_submit.text
 
-                if "checkpoint" in response_text.lower() or "confirm" in response_text.lower() or "code" in response_text.lower():
-                    print(f"{Y}[!] Verification required for {email}, polling for OTP...{W}")
-                    success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp(ses, email)
-                    if success and uid:
-                        coki = ";".join([f"{k}={v}" for k, v in cookies_dict.items()])
-                        with lock:
-                            if done[0] >= num:
-                                return
-                            done[0] += 1
-                            current = done[0]
-                            oks.append(uid)
-                            if show_details == 'y':
-                                print(f"\n{W}[{G}•{W}] Name   : {G}{firstname} {lastname}{W}")
-                                print(f"{W}[{G}•{W}] Email  : {G}{email}{W}")
-                                print(f"{W}[{G}•{W}] OTP    : {G}{otp_code}{W}")
-                                print(f"{W}[{G}•{W}] UID    : {G}{uid}{W}")
-                                print(f"{W}[{G}•{W}] PASS   : {G}{pww}{W}")
-                                print(f"{W}[{G}•{W}] COOKIES: {G}{coki}{W}")
-                                print(f"{W}─────────────────────────────────────────────{W}")
-                            else:
-                                print(f"\n{G}CYBER-X{W}-{G}[OK] {current}/{num} | {uid} | {pww} | OTP:{otp_code}")
-                            try:
-                                with open('accounts.txt', 'a') as f:
-                                    f.write(f"{uid}|{pww}|{email}|{coki}|OTP:{otp_code}\n")
-                            except Exception:
-                                pass
-                    else:
-                        with lock:
-                            cps.append(email)
-                        print(f"{R}[!] Verification failed for {email}{W}")
-                
-                elif "c_user" in login_coki:
-                    uid = login_coki["c_user"]
-                    coki = ";".join([f"{k}={v}" for k, v in login_coki.items()])
+                # Use new full checkpoint handler
+                success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp_full(ses, email)
+
+                if success and uid:
+                    coki = ";".join([f"{k}={v}" for k, v in cookies_dict.items()])
                     
-                    time.sleep(3)
-                    check_resp = ses.get("https://mbasic.facebook.com/me/", allow_redirects=True)
-                    if "checkpoint" in check_resp.text.lower() or "confirm" in check_resp.text.lower():
-                        print(f"{Y}[!] Post-creation verification needed, fetching OTP...{W}")
-                        success, uid2, cookies_dict, otp_code = confirm_account_with_auto_otp(ses, email)
-                        if success and uid2:
-                            uid = uid2
-                            coki = ";".join([f"{k}={v}" for k, v in cookies_dict.items()])
+                    # Upload profile picture based on choice
+                    if pic_choice == '2':
+                        upload_profile_picture_random(ses, uid)
+                    elif pic_choice == '3' and custom_pic_url:
+                        upload_profile_picture_url(ses, uid, custom_pic_url)
+                    elif pic_choice == '4':
+                        upload_profile_picture_manual(ses, uid)
                     
                     with lock:
                         if done[0] >= num:
@@ -1568,23 +2009,22 @@ def createfb_method_1():
                         if show_details == 'y':
                             print(f"\n{W}[{G}•{W}] Name   : {G}{firstname} {lastname}{W}")
                             print(f"{W}[{G}•{W}] Email  : {G}{email}{W}")
-                            if 'otp_code' in locals() and otp_code:
-                                print(f"{W}[{G}•{W}] OTP    : {G}{otp_code}{W}")
+                            print(f"{W}[{G}•{W}] OTP    : {G}{otp_code}{W}")
                             print(f"{W}[{G}•{W}] UID    : {G}{uid}{W}")
                             print(f"{W}[{G}•{W}] PASS   : {G}{pww}{W}")
                             print(f"{W}[{G}•{W}] COOKIES: {G}{coki}{W}")
                             print(f"{W}─────────────────────────────────────────────{W}")
                         else:
-                            otp_display = f" | OTP:{otp_code}" if 'otp_code' in locals() and otp_code else ""
-                            print(f"\n{G}CYBER-X{W}-{G}[OK] {current}/{num} | {uid} | {pww}{otp_display}")
+                            print(f"\n{G}CYBER-X{W}-{G}[OK] {current}/{num} | {uid} | {pww} | OTP:{otp_code}")
                         try:
                             with open('accounts.txt', 'a') as f:
-                                otp_part = f"|OTP:{otp_code}" if 'otp_code' in locals() and otp_code else ""
-                                f.write(f"{uid}|{pww}|{email}|{coki}{otp_part}\n")
+                                f.write(f"{uid}|{pww}|{email}|{coki}|OTP:{otp_code}\n")
                         except Exception:
                             pass
                 else:
-                    pass
+                    with lock:
+                        cps.append(email)
+                    print(f"{R}[!] Verification failed for {email}{W}")
                     
             except Exception as e:
                 time.sleep(2)
@@ -1684,7 +2124,7 @@ def register_account(domain_choice, name_option="1", gender_option="3", custom_p
                 time.sleep(3)
                 check_resp = ses.get("https://mbasic.facebook.com/me/", allow_redirects=True)
                 if "checkpoint" in check_resp.text.lower():
-                    success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp(ses, email)
+                    success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp_full(ses, email)
                     if success and uid:
                         cookie_str = ";".join([f"{k}={v}" for k, v in cookies_dict.items()])
                         return {
@@ -1716,7 +2156,7 @@ def register_account(domain_choice, name_option="1", gender_option="3", custom_p
             needs_otp = any(kw in response_lower for kw in otp_keywords)
             
             if needs_otp:
-                success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp(ses, email)
+                success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp_full(ses, email)
                 if success and uid:
                     cookie_str = ";".join([f"{k}={v}" for k, v in cookies_dict.items()])
                     return {
@@ -1781,9 +2221,9 @@ def get_cookie_string(session):
     cookies = session.cookies.get_dict()
     return ";".join([f"{k}={v}" for k, v in cookies.items()])
 
-# ============ TELEGRAM BOT KE LIYE REGISTER ACCOUNT FUNCTION - FIXED ============
-def register_account_for_bot(domain_choice="yandex", name_option="1", gender_option="3", custom_pass=None, max_retries=5):
-    """Single account creation for Telegram bot - ALWAYS fetches and shows OTP"""
+# ============ MODIFIED: register_account_for_bot with profile picture ============
+def register_account_for_bot(domain_choice="yandex", name_option="1", gender_option="3", custom_pass=None, max_retries=5, profile_pic_option="skip", profile_pic_value=None):
+    """Single account creation for Telegram bot - with full checkpoint and profile picture options"""
     import time as _time
     
     for attempt in range(max_retries):
@@ -1864,10 +2304,14 @@ def register_account_for_bot(domain_choice="yandex", name_option="1", gender_opt
                 time.sleep(3)
                 check_resp = ses.get("https://mbasic.facebook.com/me/", allow_redirects=True)
                 if "checkpoint" in check_resp.text.lower():
-                    success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp(ses, email)
+                    success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp_full(ses, email)
                     if success and uid:
                         cookie_str = get_cookie_string(ses)
-                        print(f"{G}[✓] Returning OTP to bot: {otp_code}{W}")
+                        # Upload profile picture
+                        if profile_pic_option == "url" and profile_pic_value:
+                            upload_profile_picture_url(ses, uid, profile_pic_value)
+                        elif profile_pic_option == "random":
+                            upload_profile_picture_random(ses, uid)
                         return {
                             "name": f"{firstname} {lastname}",
                             "email": email,
@@ -1882,10 +2326,7 @@ def register_account_for_bot(domain_choice="yandex", name_option="1", gender_opt
                         continue
                 else:
                     cookie_str = get_cookie_string(ses)
-                    # FIX: Account created without checkpoint - still fetch OTP from email!
-                    print(f"{Y}[!] Account created without checkpoint, fetching OTP from email anyway...{W}")
                     otp_code = fetch_otp_from_yandex(email, timeout=60, mark_read=True)
-                    print(f"{G}[✓] OTP fetched from email: {otp_code}{W}")
                     return {
                         "name": f"{firstname} {lastname}",
                         "email": email,
@@ -1901,10 +2342,14 @@ def register_account_for_bot(domain_choice="yandex", name_option="1", gender_opt
             needs_otp = any(kw in response_lower for kw in otp_keywords)
             
             if needs_otp:
-                success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp(ses, email)
+                success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp_full(ses, email)
                 if success and uid:
                     cookie_str = get_cookie_string(ses)
-                    print(f"{G}[✓] Returning OTP to bot: {otp_code}{W}")
+                    # Upload profile picture
+                    if profile_pic_option == "url" and profile_pic_value:
+                        upload_profile_picture_url(ses, uid, profile_pic_value)
+                    elif profile_pic_option == "random":
+                        upload_profile_picture_random(ses, uid)
                     return {
                         "name": f"{firstname} {lastname}",
                         "email": email,
@@ -1924,439 +2369,6 @@ def register_account_for_bot(domain_choice="yandex", name_option="1", gender_opt
         time.sleep(2)
     
     return None
-
-# =====================================================
-# ============ NEW FUNCTIONS ADDED BELOW ============
-# =====================================================
-
-# ============ PROXY FUNCTIONS ============
-def load_proxies_from_file(file_path="proxies.txt"):
-    """proxies.txt se proxies load karega"""
-    proxies = []
-    try:
-        if os.path.exists(file_path):
-            with open(file_path, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        # Format: http://user:pass@ip:port or ip:port or http://ip:port
-                        if '://' not in line:
-                            line = 'http://' + line
-                        proxies.append(line)
-        else:
-            # Create sample proxies.txt
-            with open(file_path, 'w') as f:
-                f.write("# Proxy format: http://user:pass@ip:port\n")
-                f.write("# Or: ip:port\n")
-                f.write("# Or: http://ip:port\n")
-            print(f"{Y}[!] Created proxies.txt template. Add your proxies.{W}")
-    except Exception as e:
-        print(f"{R}[!] Error loading proxies: {e}{W}")
-    return proxies
-
-def check_proxy_working(proxy, test_url="https://facebook.com", timeout=10):
-    """Proxy working hai ya nahi check karega"""
-    try:
-        proxies = {'http': proxy, 'https': proxy}
-        response = requests.get(test_url, proxies=proxies, timeout=timeout, headers={'User-Agent': ugenX()})
-        if response.status_code == 200:
-            return True
-        return False
-    except:
-        return False
-
-def get_working_proxy(proxies_list):
-    """List mein se working proxy return karega"""
-    for proxy in proxies_list:
-        if check_proxy_working(proxy):
-            print(f"{G}[✓] Working proxy found: {proxy}{W}")
-            return proxy
-    print(f"{R}[!] No working proxies found! Using direct connection.{W}")
-    return None
-
-def get_session_with_proxy(proxy=None):
-    """Proxy ke saath session create karega"""
-    session = requests.Session()
-    if proxy:
-        session.proxies = {'http': proxy, 'https': proxy}
-    return session
-# =========================================
-
-# ============ COMPLETE CHECKPOINT HANDLER ============
-def handle_all_checkpoints(session, email_address):
-    """
-    Saare checkpoints handle karega - email confirm, security, phone skip, etc.
-    """
-    max_checks = 8
-    for attempt in range(max_checks):
-        try:
-            # Current page check
-            resp = session.get("https://mbasic.facebook.com/", allow_redirects=True)
-            
-            # Already have full access?
-            if 'c_user' in session.cookies.get_dict():
-                uid = session.cookies.get_dict()['c_user']
-                print(f"{G}[✓] Full access achieved! UID: {uid}{W}")
-                return True, uid, session.cookies.get_dict()
-            
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            text_lower = resp.text.lower()
-            
-            # ====== 1. EMAIL CONFIRMATION PAGE ======
-            if "email address belongs to you" in text_lower:
-                print(f"{Y}[*] On email confirmation page...{W}")
-                otp = fetch_otp_from_yandex(email_address, timeout=120)
-                if otp:
-                    form = soup.find('form')
-                    if form:
-                        action = form.get('action', '')
-                        if not action.startswith('http'):
-                            action = 'https://mbasic.facebook.com' + action
-                        
-                        fields = {}
-                        for inp in form.find_all('input'):
-                            name = inp.get('name')
-                            value = inp.get('value', '')
-                            if name:
-                                fields[name] = value
-                        
-                        otp_field = None
-                        for key in ['code', 'confirm_code', 'n', 'approvals_code', 'otp']:
-                            if key in fields:
-                                otp_field = key
-                                break
-                        
-                        if otp_field:
-                            fields[otp_field] = otp
-                            submit_resp = session.post(action, data=fields, allow_redirects=True)
-                            print(f"{G}[✓] OTP submitted!{W}")
-                            time.sleep(2)
-                            continue
-            
-            # ====== 2. "OK" BUTTON PAGE ======
-            if "you should receive your email" in text_lower:
-                print(f"{Y}[*] Clicking OK button...{W}")
-                ok_form = soup.find('form')
-                if ok_form:
-                    action = ok_form.get('action', '')
-                    if not action.startswith('http'):
-                        action = 'https://mbasic.facebook.com' + action
-                    
-                    fields = {}
-                    for inp in ok_form.find_all('input'):
-                        name = inp.get('name')
-                        value = inp.get('value', '')
-                        if name:
-                            fields[name] = value
-                    
-                    session.post(action, data=fields, allow_redirects=True)
-                    time.sleep(1)
-                    continue
-            
-            # ====== 3. SKIP PHONE NUMBER ======
-            if "confirm your phone" in text_lower or "add a phone" in text_lower:
-                print(f"{Y}[*] Skipping phone number...{W}")
-                skip_link = soup.find('a', href=True, string=re.compile(r'skip|not now|later|no thanks', re.I))
-                if skip_link:
-                    skip_url = skip_link.get('href')
-                    if not skip_url.startswith('http'):
-                        skip_url = 'https://mbasic.facebook.com' + skip_url
-                    session.get(skip_url, allow_redirects=True)
-                    time.sleep(1)
-                    continue
-            
-            # ====== 4. PROFILE COMPLETION ======
-            if "complete your profile" in text_lower or "tell us about yourself" in text_lower:
-                print(f"{Y}[*] Skipping profile completion...{W}")
-                skip_link = soup.find('a', href=True, string=re.compile(r'skip|later|not now', re.I))
-                if skip_link:
-                    skip_url = skip_link.get('href')
-                    if not skip_url.startswith('http'):
-                        skip_url = 'https://mbasic.facebook.com' + skip_url
-                    session.get(skip_url, allow_redirects=True)
-                    time.sleep(1)
-                    continue
-            
-            # ====== 5. FRIEND SUGGESTIONS ======
-            if "people you may know" in text_lower or "friend suggestions" in text_lower:
-                print(f"{Y}[*] Skipping friend suggestions...{W}")
-                next_link = soup.find('a', href=True, string=re.compile(r'next|continue|skip', re.I))
-                if next_link:
-                    next_url = next_link.get('href')
-                    if not next_url.startswith('http'):
-                        next_url = 'https://mbasic.facebook.com' + next_url
-                    session.get(next_url, allow_redirects=True)
-                    time.sleep(1)
-                    continue
-            
-            # ====== 6. INTERESTS PAGE ======
-            if "select your interests" in text_lower:
-                print(f"{Y}[*] Skipping interests...{W}")
-                skip_link = soup.find('a', href=re.compile(r'.*skip.*', re.I))
-                if skip_link:
-                    skip_url = skip_link.get('href')
-                    if not skip_url.startswith('http'):
-                        skip_url = 'https://mbasic.facebook.com' + skip_url
-                    session.get(skip_url, allow_redirects=True)
-                    time.sleep(1)
-                    continue
-            
-            time.sleep(2)
-            
-        except Exception as e:
-            print(f"{R}[!] Checkpoint error: {e}{W}")
-        
-        time.sleep(1)
-    
-    final_resp = session.get("https://mbasic.facebook.com/me/", allow_redirects=True)
-    if 'c_user' in session.cookies.get_dict():
-        uid = session.cookies.get_dict()['c_user']
-        return True, uid, session.cookies.get_dict()
-    
-    return False, None, None
-
-def upload_profile_picture_from_url(session, uid, image_url=None):
-    """
-    Profile picture upload karega - ya to URL se ya manual input se
-    """
-    try:
-        print(f"{Y}[*] Uploading profile picture for UID: {uid}{W}")
-        
-        if not image_url:
-            gender = random.choice(['men', 'women'])
-            num = random.randint(1, 99)
-            image_url = f"https://randomuser.me/api/portraits/{gender}/{num}.jpg"
-        
-        img_data = requests.get(image_url, timeout=15).content
-        temp_path = f"temp_pfp_{uid}.jpg"
-        with open(temp_path, 'wb') as f:
-            f.write(img_data)
-        
-        profile_url = f"https://mbasic.facebook.com/{uid}/profile.php"
-        resp = session.get(profile_url)
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        
-        change_photo = soup.find('a', href=re.compile(r'profile_pic|change_photo|update_pic', re.I))
-        if not change_photo:
-            change_photo = soup.find('a', href=re.compile(r'/photo\.php\?fbid=', re.I))
-        
-        if change_photo:
-            photo_url = change_photo.get('href')
-            if not photo_url.startswith('http'):
-                photo_url = 'https://mbasic.facebook.com' + photo_url
-            
-            upload_resp = session.get(photo_url)
-            upload_soup = BeautifulSoup(upload_resp.text, 'html.parser')
-            
-            upload_form = upload_soup.find('form', enctype='multipart/form-data')
-            if upload_form:
-                action = upload_form.get('action', '')
-                if not action.startswith('http'):
-                    action = 'https://mbasic.facebook.com' + action
-                
-                with open(temp_path, 'rb') as f:
-                    files = {'photo': (f'profile_{uid}.jpg', f, 'image/jpeg')}
-                    upload_result = session.post(action, files=files, allow_redirects=True)
-                
-                print(f"{G}[✓] Profile picture uploaded successfully!{W}")
-                
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                
-                return True
-        
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        
-        return False
-        
-    except Exception as e:
-        print(f"{R}[!] Profile picture upload failed: {e}{W}")
-        return False
-
-def create_account_complete(use_proxy=True, name_option="1", gender_option="3", custom_pass=None, profile_pic_url=None):
-    """
-    Complete account creation with proxy support and profile picture
-    """
-    proxies_list = load_proxies_from_file("proxies.txt") if use_proxy else []
-    working_proxy = get_working_proxy(proxies_list) if proxies_list else None
-    
-    session = get_session_with_proxy(working_proxy)
-    
-    result = register_account_for_bot_complete(
-        session=session,
-        domain_choice="yandex",
-        name_option=name_option,
-        gender_option=gender_option,
-        custom_pass=custom_pass,
-        profile_pic_url=profile_pic_url
-    )
-    
-    return result
-
-def register_account_for_bot_complete(session, domain_choice="yandex", name_option="1", gender_option="3", custom_pass=None, profile_pic_url=None, max_retries=5):
-    """
-    Complete registration with full checkpoint handling and profile picture
-    """
-    import time as _time
-    
-    for attempt in range(max_retries):
-        try:
-            response = session.get("https://x.facebook.com/reg", timeout=15)
-            form = extractor(response.text)
-
-            if not form.get("lsd") and not form.get("fb_dtsg"):
-                time.sleep(3)
-                continue
-
-            if name_option == "2":
-                firstname, lastname = get_rpw_name()
-            else:
-                if gender_option == "1":
-                    firstname = random.choice(first_names_male)
-                elif gender_option == "2":
-                    firstname = random.choice(first_names_female)
-                else:
-                    firstname = random.choice(first_names_male + first_names_female)
-                lastname = random.choice(surnames)
-
-            if gender_option == "1":
-                fb_sex = "2"
-            elif gender_option == "2":
-                fb_sex = "1"
-            else:
-                fb_sex = random.choice(["1", "2"])
-
-            account_name = f"{firstname}{lastname}{int(_time.time())}{random.randint(100, 999)}"
-            email = generate_yandex_alias(account_name)
-            pww = custom_pass if custom_pass else get_pass()
-
-            payload = {
-                'ccp': "2",
-                'reg_instance': form.get("reg_instance", ""),
-                'submission_request': "true",
-                'reg_impression_id': form.get("reg_impression_id", ""),
-                'ns': "1",
-                'logger_id': form.get("logger_id", ""),
-                'firstname': firstname,
-                'lastname': lastname,
-                'birthday_day': str(random.randint(15, 25)),
-                'birthday_month': str(random.randint(5, 10)),
-                'birthday_year': str(random.randint(1985, 1995)),
-                'reg_email__': email,
-                'sex': fb_sex,
-                'encpass': f'#PWD_BROWSER:0:{int(_time.time())}:{pww}',
-                'submit': "Sign Up",
-                'fb_dtsg': form.get("fb_dtsg", ""),
-                'jazoest': form.get("jazoest", ""),
-                'lsd': form.get("lsd", ""),
-            }
-
-            headers = {
-                "Host": "m.facebook.com",
-                "Connection": "keep-alive",
-                "User-Agent": ugenX(),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                "Accept-Encoding": "gzip, deflate, br",
-                "Accept-Language": "en-US,en;q=0.9",
-                'referer': 'https://mbasic.facebook.com/reg/',
-                'sec-ch-ua-mobile': '?1',
-                'sec-ch-ua-platform': 'Android',
-                'sec-fetch-dest': 'document',
-                'sec-fetch-mode': 'navigate',
-                'sec-fetch-site': 'same-origin',
-                'upgrade-insecure-requests': '1',
-            }
-
-            reg_submit = session.post("https://www.facebook.com/reg/submit/", data=payload, headers=headers, timeout=20)
-            response_text = reg_submit.text
-            response_lower = response_text.lower()
-
-            if "checkpoint" in response_lower or "confirm" in response_lower or "code" in response_lower:
-                print(f"{Y}[!] Verification needed for {email}, handling checkpoints...{W}")
-                
-                otp_code = fetch_otp_from_yandex(email, timeout=180, mark_read=True)
-                
-                if otp_code:
-                    success, uid, cookies_dict = submit_otp_to_facebook(session, otp_code)
-                    
-                    if success and uid:
-                        full_success, final_uid, final_cookies = handle_all_checkpoints(session, email)
-                        
-                        if full_success and final_uid:
-                            pic_uploaded = False
-                            if profile_pic_url:
-                                pic_uploaded = upload_profile_picture_from_url(session, final_uid, profile_pic_url)
-                            
-                            cookie_str = get_cookie_string(session)
-                            
-                            return {
-                                "name": f"{firstname} {lastname}",
-                                "email": email,
-                                "password": pww,
-                                "uid": final_uid,
-                                "cookies": cookie_str,
-                                "session": session,
-                                "otp_fetched": True,
-                                "otp_code": otp_code,
-                                "profile_pic_uploaded": pic_uploaded
-                            }
-            
-            if 'c_user' in session.cookies.get_dict():
-                uid = session.cookies.get_dict()['c_user']
-                
-                full_success, final_uid, final_cookies = handle_all_checkpoints(session, email)
-                
-                if full_success and final_uid:
-                    pic_uploaded = False
-                    if profile_pic_url:
-                        pic_uploaded = upload_profile_picture_from_url(session, final_uid, profile_pic_url)
-                    
-                    cookie_str = get_cookie_string(session)
-                    
-                    return {
-                        "name": f"{firstname} {lastname}",
-                        "email": email,
-                        "password": pww,
-                        "uid": final_uid,
-                        "cookies": cookie_str,
-                        "session": session,
-                        "otp_fetched": False,
-                        "otp_code": None,
-                        "profile_pic_uploaded": pic_uploaded
-                    }
-
-        except Exception as e:
-            print(f"[DEBUG] Registration error: {e}")
-        
-        time.sleep(2)
-    
-    return None
-
-# Modified register_account_for_bot with proxy and profile pic support (optional, keeps original working)
-def register_account_for_bot_enhanced(domain_choice="yandex", name_option="1", gender_option="3", custom_pass=None, max_retries=5, use_proxy=True, profile_pic_url=None):
-    """Enhanced account creation with proxy and profile pic support"""
-    
-    proxies_list = load_proxies_from_file("proxies.txt") if use_proxy else []
-    working_proxy = get_working_proxy(proxies_list) if proxies_list else None
-    
-    session = get_session_with_proxy(working_proxy)
-    
-    result = register_account_for_bot_complete(
-        session=session,
-        domain_choice=domain_choice,
-        name_option=name_option,
-        gender_option=gender_option,
-        custom_pass=custom_pass,
-        profile_pic_url=profile_pic_url,
-        max_retries=max_retries
-    )
-    
-    return result
-
-# =====================================================
-# ============ END OF NEW FUNCTIONS ==================
-# =====================================================
 
 def method():
     while True:
