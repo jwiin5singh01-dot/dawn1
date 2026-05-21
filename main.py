@@ -40,8 +40,8 @@ RESET = '\033[0m'
 ua = UserAgent()
 
 # ============ YANDEX EMAIL CONFIGURATION ============
-YANDEX_EMAIL = "jerryxd@yandex.com"
-YANDEX_APP_PASSWORD = "kshxbeousfpcbxgq"
+YANDEX_EMAIL = "k3wiin@yandex.com"
+YANDEX_APP_PASSWORD = "guboopikktydwgmw"
 
 # ============ OTP EXTRACTION ============
 def extract_otp_from_text(text):
