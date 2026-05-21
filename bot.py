@@ -145,6 +145,15 @@ def make_acc_pass_kb():
         [InlineKeyboardButton(text="◀️ BACK", callback_data="back:gender")],
     ])
 
+# NEW: Profile picture selection keyboard
+def make_profile_pic_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏭️ SKIP (No Photo)", callback_data="profpic:skip")],
+        [InlineKeyboardButton(text="🎲 RANDOM Photo", callback_data="profpic:random")],
+        [InlineKeyboardButton(text="🔗 CUSTOM URL", callback_data="profpic:custom")],
+        [InlineKeyboardButton(text="◀️ BACK", callback_data="back:accpass")],
+    ])
+
 def make_stop_kb(uid):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⛔ STOP CREATION ⛔", callback_data=f"stop:{uid}")]
@@ -172,8 +181,6 @@ def make_admin_menu_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👥 Approved Users", callback_data="menu:users")],
         [InlineKeyboardButton(text="📋 Created Accounts", callback_data="menu:accounts")],
-        [InlineKeyboardButton(text="🖼️ Set Profile Pic (Manual)", callback_data="menu:setpfp")],
-        [InlineKeyboardButton(text="🌐 Proxy Settings", callback_data="menu:proxy")],
         [InlineKeyboardButton(text="◀️ BACK", callback_data="menu:back")],
     ])
 
@@ -210,43 +217,6 @@ def make_accounts_kb():
     rows.append([InlineKeyboardButton(text="◀️ BACK", callback_data="menu:admin")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-def make_setpfp_kb():
-    rows = []
-    users_accounts = {}
-    for acc in created_accounts:
-        uid = acc.get("by")
-        if uid not in users_accounts:
-            users_accounts[uid] = []
-        users_accounts[uid].append(acc)
-    
-    for uid, accs in users_accounts.items():
-        user_info = pending_users.get(uid, {})
-        name = user_info.get("name", str(uid))
-        rows.append([InlineKeyboardButton(
-            text=f"👤 {name} ({len(accs)} accounts)",
-            callback_data=f"noop"
-        )])
-        for acc in accs[:5]:
-            rows.append([InlineKeyboardButton(
-                text=f"  📧 {acc['email'][:25]}...",
-                callback_data=f"setpfp:{acc['uid']}"
-            )])
-        rows.append([InlineKeyboardButton(text="─" * 20, callback_data="noop")])
-    
-    if not rows:
-        rows.append([InlineKeyboardButton(text="— No accounts yet —", callback_data="noop")])
-    
-    rows.append([InlineKeyboardButton(text="◀️ BACK", callback_data="menu:admin")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
-
-def make_proxy_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🟢 Use Proxy (ON)", callback_data="proxy:on")],
-        [InlineKeyboardButton(text="🔴 Don't Use Proxy (OFF)", callback_data="proxy:off")],
-        [InlineKeyboardButton(text="📝 Reload Proxies", callback_data="proxy:reload")],
-        [InlineKeyboardButton(text="◀️ BACK", callback_data="menu:admin")],
-    ])
-
 def is_allowed(uid):
     return uid == OWNER_ID or uid in approved_users
 
@@ -257,9 +227,6 @@ async def _del(chat_id, msg_id, delay=0):
         await bot.delete_message(chat_id, msg_id)
     except Exception:
         pass
-
-# Global proxy setting
-USE_PROXY = True
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -287,15 +254,15 @@ async def cmd_start(message: types.Message):
             f"│  📧 Yandex Email Support│\n"
             f"│  🔐 Auto OTP Fetch      │\n"
             f"│  🖼️ Profile Picture     │\n"
-            f"│  🌐 Proxy Support       │\n"
             f"└─────────────────────────┘\n\n"
             f"📌 *HOW TO USE:*\n"
             f"1️⃣ Tap *START CREATION*\n"
             f"2️⃣ Choose name style\n"
             f"3️⃣ Choose gender\n"
             f"4️⃣ Set account password\n"
-            f"5️⃣ Type how many accounts\n"
-            f"6️⃣ Get results instantly!\n\n"
+            f"5️⃣ Choose profile picture option\n"
+            f"6️⃣ Type how many accounts\n"
+            f"7️⃣ Get results instantly!\n\n"
             f"⚠️ *Note:* Access requires owner approval.",
             parse_mode="Markdown"
         )
@@ -458,7 +425,7 @@ async def cb_give_credits(callback: types.CallbackQuery):
             asyncio.create_task(_del(target_id, req_msg_id))
         await bot.send_message(
             target_id,
-            f"✅ *ACCESS APPROVED!*\n\n💳 You've been given *{amount}* credit(s).\n_(1 credit = 1 Facebook account)_\n\n📧 *Email:* Yandex alias will be used\n🖼️ *Profile Pic:* Auto or Manual\n🌐 *Proxy:* {'ON' if USE_PROXY else 'OFF'}\n\n👇 *Tap below to start* 👇",
+            f"✅ *ACCESS APPROVED!*\n\n💳 You've been given *{amount}* credit(s).\n_(1 credit = 1 Facebook account)_\n\n📧 *Email:* Yandex alias will be used\n\n👇 *Tap below to start* 👇",
             parse_mode="Markdown",
             reply_markup=make_start_kb(target_id)
         )
@@ -542,13 +509,13 @@ async def cb_menu_accounts(callback: types.CallbackQuery):
     else:
         lines = []
         for i, acc in enumerate(created_accounts, 1):
-            otp_line = f"\n    🔢 *OTP:* `{acc.get('otp_code', 'N/A')}`" if acc.get('otp_code') else ""
-            pic_line = f"\n    🖼️ *Profile Pic:* {'✅ Uploaded' if acc.get('profile_pic_uploaded') else '❌ Not uploaded'}" if acc.get('profile_pic_uploaded') is not None else ""
             lines.append(
-                f"*{i}.* 👤 `{acc['name']}`\n    📧 `{acc['email']}`\n    🔑 `{acc['password']}`\n    🆔 `{acc['uid']}`{otp_line}{pic_line}"
+                f"*{i}.* 👤 `{acc['name']}`\n    📧 `{acc['email']}`\n    🔑 `{acc['password']}`\n    🆔 `{acc['uid']}`"
             )
             if acc.get('cookies'):
                 lines.append(f"    🍪 *Cookies:* `{acc['cookies']}`")
+            if acc.get('otp_code'):
+                lines.append(f"    🔢 *OTP:* `{acc['otp_code']}`")
         body = "\n\n".join(lines)
         text = f"📋 *CREATED ACCOUNTS* — {len(created_accounts)} total\n\n{body}"
         if len(text) > 4000:
@@ -571,64 +538,6 @@ async def cb_accounts_clear(callback: types.CallbackQuery):
     )
     await callback.answer("✅ Cleared!", show_alert=True)
 
-@dp.callback_query(lambda c: c.data == "menu:setpfp")
-async def cb_menu_setpfp(callback: types.CallbackQuery):
-    if callback.from_user.id != OWNER_ID:
-        await callback.answer("Owner only.", show_alert=True)
-        return
-    await callback.message.edit_text(
-        "🖼️ *SET PROFILE PICTURE*\n\nSelect an account to set profile picture:",
-        parse_mode="Markdown",
-        reply_markup=make_setpfp_kb()
-    )
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data == "menu:proxy")
-async def cb_menu_proxy(callback: types.CallbackQuery):
-    if callback.from_user.id != OWNER_ID:
-        await callback.answer("Owner only.", show_alert=True)
-        return
-    status = "🟢 ENABLED" if USE_PROXY else "🔴 DISABLED"
-    await callback.message.edit_text(
-        f"🌐 *PROXY SETTINGS*\n\nCurrent Status: *{status}*\n\n"
-        f"📁 *proxies.txt* file in the same directory\n"
-        f"Format: `http://ip:port` or `http://user:pass@ip:port`\n\n"
-        f"Choose option below:",
-        parse_mode="Markdown",
-        reply_markup=make_proxy_kb()
-    )
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data.startswith("proxy:"))
-async def cb_proxy_action(callback: types.CallbackQuery):
-    global USE_PROXY
-    if callback.from_user.id != OWNER_ID:
-        await callback.answer("Owner only.", show_alert=True)
-        return
-    
-    action = callback.data.split(":")[1]
-    
-    if action == "on":
-        USE_PROXY = True
-        await callback.answer("✅ Proxy ENABLED!", show_alert=True)
-    elif action == "off":
-        USE_PROXY = False
-        await callback.answer("❌ Proxy DISABLED!", show_alert=True)
-    elif action == "reload":
-        fb.load_proxies_from_file("proxies.txt")
-        await callback.answer("🔄 Proxies reloaded from file!", show_alert=True)
-    
-    status = "🟢 ENABLED" if USE_PROXY else "🔴 DISABLED"
-    await callback.message.edit_text(
-        f"🌐 *PROXY SETTINGS*\n\nCurrent Status: *{status}*\n\n"
-        f"📁 *proxies.txt* file in the same directory\n"
-        f"Format: `http://ip:port` or `http://user:pass@ip:port`\n\n"
-        f"Choose option below:",
-        parse_mode="Markdown",
-        reply_markup=make_proxy_kb()
-    )
-    await callback.answer()
-
 @dp.callback_query(lambda c: c.data == "menu:myaccs")
 async def cb_my_accounts(callback: types.CallbackQuery):
     uid  = callback.from_user.id
@@ -642,9 +551,8 @@ async def cb_my_accounts(callback: types.CallbackQuery):
         lines = []
         for i, acc in enumerate(mine, 1):
             otp_line = f"\n    🔢 *OTP:* `{acc.get('otp_code', 'N/A')}`" if acc.get('otp_code') else ""
-            pic_line = f"\n    🖼️ *Profile Pic:* {'✅ Uploaded' if acc.get('profile_pic_uploaded') else '❌ Not uploaded'}" if acc.get('profile_pic_uploaded') is not None else ""
             lines.append(
-                f"*{i}.* 👤 `{acc['name']}`\n    📧 `{acc['email']}`\n    🔑 `{acc['password']}`\n    🆔 `{acc['uid']}`{otp_line}{pic_line}"
+                f"*{i}.* 👤 `{acc['name']}`\n    📧 `{acc['email']}`\n    🔑 `{acc['password']}`\n    🆔 `{acc['uid']}`{otp_line}"
             )
             if acc.get('cookies'):
                 lines.append(f"    🍪 *Cookies:* `{acc['cookies']}`")
@@ -674,9 +582,8 @@ async def cb_bot_accounts(callback: types.CallbackQuery):
         for i, acc in enumerate(mine, 1):
             by_line = f"\n    👤 by `{acc.get('by', '?')}`" if is_owner else ""
             otp_line = f"\n    🔢 *OTP:* `{acc.get('otp_code', 'N/A')}`" if acc.get('otp_code') else ""
-            pic_line = f"\n    🖼️ *Profile Pic:* {'✅ Uploaded' if acc.get('profile_pic_uploaded') else '❌ Not uploaded'}" if acc.get('profile_pic_uploaded') is not None else ""
             lines.append(
-                f"*{i}.* 👤 `{acc['name']}`\n    📧 `{acc['email']}`\n    🔑 `{acc['password']}`\n    🆔 `{acc['uid']}`{by_line}{otp_line}{pic_line}"
+                f"*{i}.* 👤 `{acc['name']}`\n    📧 `{acc['email']}`\n    🔑 `{acc['password']}`\n    🆔 `{acc['uid']}`{by_line}{otp_line}"
             )
             if acc.get('cookies'):
                 lines.append(f"    🍪 *Cookies:* `{acc['cookies']}`")
@@ -704,28 +611,6 @@ async def cb_my_credits(callback: types.CallbackQuery):
         f"💎 *MY CREDITS*\n\nAvailable: *{credits}* credit(s)\n_(1 credit = 1 Facebook account)_",
         parse_mode="Markdown",
         reply_markup=back_kb
-    )
-    await callback.answer()
-
-@dp.callback_query(lambda c: c.data.startswith("setpfp:"))
-async def cb_set_profile_picture(callback: types.CallbackQuery):
-    uid = callback.from_user.id
-    account_uid = callback.data.split(":")[1]
-    
-    if uid != OWNER_ID:
-        await callback.answer("Owner only command.", show_alert=True)
-        return
-    
-    user_data[uid] = {"awaiting_pfp_url": True, "target_account_uid": account_uid}
-    
-    await callback.message.edit_text(
-        f"🖼️ *Set Profile Picture*\n\n"
-        f"Account UID: `{account_uid}`\n\n"
-        f"Send me an image URL (direct link to JPG/PNG):\n\n"
-        f"Example: `https://randomuser.me/api/portraits/women/1.jpg`\n\n"
-        f"Or send 'random' for automatic random photo.\n\n"
-        f"Or send 'skip' to cancel.",
-        parse_mode="Markdown"
     )
     await callback.answer()
 
@@ -774,6 +659,12 @@ async def cb_back(callback: types.CallbackQuery):
             parse_mode="Markdown",
             reply_markup=make_acc_pass_kb()
         )
+    elif step == "profpic":
+        await callback.message.edit_text(
+            "🖼️ *PROFILE PICTURE OPTION*\n\nChoose one:",
+            parse_mode="Markdown",
+            reply_markup=make_profile_pic_kb()
+        )
     await callback.answer()
 
 @dp.callback_query(lambda c: c.data.startswith("name:"))
@@ -810,14 +701,12 @@ async def cb_acc_pass(callback: types.CallbackQuery):
     choice = callback.data.split(":")[1]
     if choice == "random":
         user_data[uid]["password"]      = None
-        user_data[uid]["awaiting"]      = "count"
+        user_data[uid]["awaiting"]      = "profpic"
         user_data[uid]["prompt_msg_id"] = callback.message.message_id
         await callback.message.edit_text(
-            f"🔢 *HOW MANY ACCOUNTS?*\n\n_(Type a number, e.g. 5)_\n\n📧 *Email:* Yandex alias will be used\n\n✅ *OTP will be automatically fetched from Yandex email!*\n\n🖼️ *Profile Picture:* You can set later via owner panel\n\n🌐 *Proxy:* {'ON' if USE_PROXY else 'OFF'}",
+            "🖼️ *PROFILE PICTURE OPTION*\n\nChoose one:",
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ BACK", callback_data="back:accpass")]
-            ])
+            reply_markup=make_profile_pic_kb()
         )
     else:
         user_data[uid]["awaiting"]      = "custom_pass"
@@ -827,6 +716,41 @@ async def cb_acc_pass(callback: types.CallbackQuery):
             parse_mode="Markdown",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text="◀️ BACK", callback_data="back:accpass")]
+            ])
+        )
+    await callback.answer()
+
+# NEW: Profile picture selection handler
+@dp.callback_query(lambda c: c.data.startswith("profpic:"))
+async def cb_profile_pic(callback: types.CallbackQuery):
+    uid = callback.from_user.id
+    if uid not in user_data:
+        await callback.answer("Session expired. Use /start", show_alert=True)
+        return
+    
+    choice = callback.data.split(":")[1]
+    user_data[uid]["profile_pic_option"] = choice
+    
+    if choice == "custom":
+        user_data[uid]["awaiting"] = "custom_url"
+        user_data[uid]["prompt_msg_id"] = callback.message.message_id
+        await callback.message.edit_text(
+            "🔗 *ENTER IMAGE URL*\n\nSend a direct image URL (https://...)\n\nExample: `https://example.com/photo.jpg`",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ BACK", callback_data="back:profpic")]
+            ])
+        )
+    else:
+        user_data[uid]["profile_pic_value"] = None
+        user_data[uid]["awaiting"] = "count"
+        user_data[uid]["prompt_msg_id"] = callback.message.message_id
+        await callback.message.edit_text(
+            "🔢 *HOW MANY ACCOUNTS?*\n\n_(Type a number, e.g. 5)_\n\n📧 *Email:* Yandex alias will be used\n\n✅ *OTP will be automatically fetched from Yandex email!*\n\n🖼️ *Profile picture:* " + 
+            ("Skipped" if choice == "skip" else "Random photo" if choice == "random" else "Custom URL"),
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ BACK", callback_data="back:profpic")]
             ])
         )
     await callback.answer()
@@ -856,9 +780,8 @@ async def cb_stop(callback: types.CallbackQuery):
         reply_markup=make_start_kb(uid)
     )
 
-# ============ MAIN CREATION FUNCTION - WITH NEW ENHANCED METHOD ============
+# ============ MODIFIED CREATION FUNCTION ============
 async def _start_creation(uid, count, data, chat_id, is_continuation=False):
-    global USE_PROXY
     stop_flags[uid] = False
 
     if not is_continuation:
@@ -868,10 +791,13 @@ async def _start_creation(uid, count, data, chat_id, is_continuation=False):
             f"┌─────────────────────────┐\n"
             f"│ 📧 Yandex alias        │\n"
             f"│ 🔐 OTP auto-fetched    │\n"
-            f"│ 🖼️ Profile pic support │\n"
-            f"│ 🌐 Proxy: {'ON' if USE_PROXY else 'OFF'}│\n"
             f"│ 🔄 Retry twice if fail │\n"
             f"│ ⏰ 3 min wait for OTP  │\n"
+            f"│ 🖼️ Profile pic: " + 
+            ("Skipped" if data.get("profile_pic_option") == "skip" 
+             else "Random" if data.get("profile_pic_option") == "random"
+             else "Custom URL" if data.get("profile_pic_option") == "custom"
+             else "None") + "\n"
             f"└─────────────────────────┘",
             parse_mode="Markdown",
             reply_markup=make_stop_kb(uid)
@@ -881,6 +807,8 @@ async def _start_creation(uid, count, data, chat_id, is_continuation=False):
     name_val   = str(data.get("name", "1"))
     gender_val = str(data.get("gender", "1"))
     custom_pw  = data.get("password", None)
+    prof_pic_option = data.get("profile_pic_option", "skip")
+    prof_pic_value = data.get("profile_pic_value", None)
 
     N_WORKERS = 2
     session_executor = ThreadPoolExecutor(max_workers=N_WORKERS, thread_name_prefix=f"fb_{uid}")
@@ -899,14 +827,13 @@ async def _start_creation(uid, count, data, chat_id, is_continuation=False):
 
             def _register():
                 try:
-                    # USING NEW ENHANCED METHOD FROM main.py
-                    result = fb.register_account_for_bot_enhanced(
+                    result = fb.register_account_for_bot(
                         domain_choice="yandex",
                         name_option=name_val,
                         gender_option=gender_val,
                         custom_pass=custom_pw,
-                        use_proxy=USE_PROXY,
-                        profile_pic_url=None  # Auto random profile pic
+                        profile_pic_option=prof_pic_option,
+                        profile_pic_value=prof_pic_value
                     )
                     return result
                 except Exception as e:
@@ -939,9 +866,6 @@ async def _start_creation(uid, count, data, chat_id, is_continuation=False):
                     else:
                         otp_line = ""
                     
-                    pic_status = result.get("profile_pic_uploaded", False)
-                    pic_line = f"\n🖼️ *Profile Pic:* {'✅ Uploaded' if pic_status else '❌ Failed'}"
-                    
                     cookies_full = result.get("cookies", "")
                     
                     account_data = {
@@ -951,7 +875,6 @@ async def _start_creation(uid, count, data, chat_id, is_continuation=False):
                         "uid":      result.get("uid", "N/A"),
                         "cookies":  cookies_full,
                         "otp_code": otp_code_value,
-                        "profile_pic_uploaded": pic_status,
                         "by":       uid,
                     }
                     created_accounts.append(account_data)
@@ -968,7 +891,6 @@ async def _start_creation(uid, count, data, chat_id, is_continuation=False):
                     f"│ 🔑 *Password:* `{result.get('password', 'N/A')}`\n"
                     f"│ 🆔 *UID:* `{result.get('uid', 'N/A')}`\n"
                     f"{otp_line}\n"
-                    f"{pic_line}\n"
                     f"{cookie_msg}\n"
                     f"{credits_left}\n"
                     f"└─────────────────────────┘\n\n"
@@ -1027,77 +949,48 @@ async def _start_creation(uid, count, data, chat_id, is_continuation=False):
             reply_markup=make_start_kb(uid)
         )
 
-# ============ HANDLE MANUAL PROFILE PICTURE URL ============
+# MODIFIED: handle_text with custom URL support
 @dp.message()
 async def handle_text(message: types.Message):
     uid      = message.from_user.id
     chat_id  = message.chat.id
     entered  = (message.text or "").strip()
 
-    # Check for manual profile pic URL input
-    data = user_data.get(uid, {})
-    if data.get("awaiting_pfp_url"):
-        url = entered.lower()
-        target_uid = data.get("target_account_uid")
-        
-        # Find the account
-        account = None
-        for acc in created_accounts:
-            if acc.get("uid") == target_uid:
-                account = acc
-                break
-        
-        if not account:
-            await message.answer("❌ Account not found!")
-            user_data.pop(uid, None)
-            return
-        
-        # Get session from cookies
-        session = _requests.Session()
-        cookies_str = account.get("cookies", "")
-        for cookie in cookies_str.split(';'):
-            if '=' in cookie:
-                k, v = cookie.strip().split('=', 1)
-                session.cookies.set(k, v)
-        
-        if url == 'random' or url == '':
-            image_url = None
-        elif url == 'skip':
-            await message.answer("❌ Profile picture upload cancelled.")
-            user_data.pop(uid, None)
-            return
-        else:
-            image_url = entered
-        
-        # Upload profile picture using main.py function
-        try:
-            status = fb.upload_profile_picture_from_url(session, target_uid, image_url if image_url else None)
-            
-            if status:
-                # Update account record
-                for acc in created_accounts:
-                    if acc.get("uid") == target_uid:
-                        acc["profile_pic_uploaded"] = True
-                        save_users()
-                await message.answer(f"✅ *Profile picture uploaded* for account `{target_uid}`!", parse_mode="Markdown")
-            else:
-                await message.answer(f"❌ *Failed to upload* profile picture for `{target_uid}`. Try another URL.", parse_mode="Markdown")
-        except Exception as e:
-            await message.answer(f"❌ Error: {str(e)[:100]}")
-        
-        user_data.pop(uid, None)
-        return
-
-    # Normal flow for account creation
     data     = user_data.get(uid)
     awaiting = data.get("awaiting") if data else None
 
-    if not data or awaiting not in ("custom_pass", "count"):
+    if not data or awaiting not in ("custom_pass", "count", "custom_url"):
         return
 
     prompt_msg_id = data.pop("prompt_msg_id", None)
 
     asyncio.create_task(_del(chat_id, message.message_id))
+
+    # NEW: Handle custom URL input
+    if awaiting == "custom_url":
+        if prompt_msg_id:
+            asyncio.create_task(_del(chat_id, prompt_msg_id))
+        if not (entered.startswith("http://") or entered.startswith("https://")):
+            err = await message.answer(
+                "⚠️ Invalid URL. Please send a valid image URL starting with http:// or https://",
+                parse_mode="Markdown"
+            )
+            asyncio.create_task(_del(chat_id, err.message_id, delay=4))
+            user_data[uid]["awaiting"] = "custom_url"
+            user_data[uid]["prompt_msg_id"] = err.message_id
+            return
+        
+        user_data[uid]["profile_pic_value"] = entered
+        user_data[uid]["awaiting"] = "count"
+        prompt = await message.answer(
+            "✅ *Custom URL set!*\n\n🔢 *HOW MANY ACCOUNTS?*\n\n_(Type a number, e.g. 5)_\n\n📧 *Email:* Yandex alias will be used\n\n✅ *OTP will be automatically fetched from Yandex email!*",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ BACK", callback_data="back:profpic")]
+            ])
+        )
+        user_data[uid]["prompt_msg_id"] = prompt.message_id
+        return
 
     if awaiting == "custom_pass":
         if prompt_msg_id:
@@ -1112,14 +1005,13 @@ async def handle_text(message: types.Message):
             return
         user_data[uid]["password"] = entered
         user_data[uid].pop("awaiting", None)
+        # After custom password, go to profile picture selection
+        user_data[uid]["awaiting"] = "profpic"
         prompt = await message.answer(
-            f"✅ *Custom password set!*\n\n🔢 *HOW MANY ACCOUNTS?*\n\n_(Type a number, e.g. 5)_\n\n📧 *Email:* Yandex alias will be used\n\n✅ *OTP will be automatically fetched from Yandex email!*\n\n🖼️ *Profile Picture:* Auto random photo\n\n🌐 *Proxy:* {'ON' if USE_PROXY else 'OFF'}",
+            "✅ *Custom password set!*\n\n🖼️ *PROFILE PICTURE OPTION*\n\nChoose one:",
             parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="◀️ BACK", callback_data="back:accpass")]
-            ])
+            reply_markup=make_profile_pic_kb()
         )
-        user_data[uid]["awaiting"]      = "count"
         user_data[uid]["prompt_msg_id"] = prompt.message_id
         return
 
@@ -1156,8 +1048,8 @@ async def handle_text(message: types.Message):
                 )
                 asyncio.create_task(_del(chat_id, note.message_id, delay=5))
 
-        d = user_data.pop(uid)
-        await _start_creation(uid, count, d, message.chat.id)
+        final_data = user_data.pop(uid)
+        await _start_creation(uid, count, final_data, message.chat.id)
 
 async def main():
     print("=" * 60)
@@ -1166,8 +1058,7 @@ async def main():
     print(f"📧 Email: Yandex (jerryxd@yandex.com)")
     print(f"👑 Owner ID: {OWNER_ID}")
     print("🔐 OTP: Auto-fetched from Yandex (3 min wait)")
-    print("🖼️ Profile Picture: Auto random photo")
-    print(f"🌐 Proxy Support: {'ON' if USE_PROXY else 'OFF'} (use /menu to change)")
+    print("🖼️ Profile Picture: URL / Random / Manual / Skip")
     print("=" * 60)
     logging.basicConfig(level=logging.INFO)
     load_from_github()
