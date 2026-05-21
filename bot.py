@@ -7,7 +7,7 @@ import re
 import random
 import string
 import time
-import requests as _requests
+import requests
 import imaplib
 import email
 from email.header import decode_header
@@ -17,6 +17,9 @@ from faker import Faker
 import pyotp
 import threading
 import html
+import sys
+import subprocess
+import platform
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
@@ -342,56 +345,6 @@ def confirm_account_with_auto_otp(session, email_address, max_retries=3):
                 mark_emails_as_read(email_address)
                 return success, uid, cookies_dict, manual_otp
     return False, None, None, None
-
-def save_to_file(data: str, file_path: str):
-    full_path = file_path
-    os.makedirs(os.path.dirname(full_path) or ".", exist_ok=True)
-    with open(full_path, "a", encoding="utf-8") as f:
-        f.write(data + "\n")
-
-def install_dependencies():
-    try:
-        import pyotp
-    except ImportError:
-        logging.warning("pyotp not installed. Installing...")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "pyotp"])
-        except Exception as e:
-            logging.error(f"Failed to install pyotp: {e}")
-            print(f"{R}Failed to install pyotp: {e}{W}")
-            sys.exit(1)
-
-def clear_screen():
-    os.system('cls' if platform.system().lower() == 'windows' else 'clear')
-
-# Device information
-try:
-    android_version = subprocess.check_output('getprop ro.build.version.release', shell=True).decode('utf-8').strip()
-    model = subprocess.check_output('getprop ro.product.model', shell=True).decode('utf-8').strip()
-    build = subprocess.check_output('getprop ro.build.id', shell=True).decode('utf-8').strip()
-    fbmf = subprocess.check_output('getprop ro.product.manufacturer', shell=True).decode('utf-8').strip()
-    fbbd = subprocess.check_output('getprop ro.product.brand', shell=True).decode('utf-8').strip()
-    fbca = subprocess.check_output('getprop ro.product.cpu.abilist', shell=True).decode('utf-8').replace(',', ':').strip()
-    fbdm = f"{{density=2.25,height={subprocess.check_output('getprop ro.hwui.text_large_cache_height', shell=True).decode('utf-8').strip()},width={subprocess.check_output('getprop ro.hwui.text_large_cache_width', shell=True).decode('utf-8').strip()}}}"
-    try:
-        fbcr = subprocess.check_output('getprop gsm.operator.alpha', shell=True).decode('utf-8').split(',')[0].strip()
-    except:
-        fbcr = 'ZONG'
-except:
-    android_version, model, build, fbmf, fbbd, fbca, fbdm, fbcr = '10', 'Unknown', 'Unknown', 'Unknown', 'Unknown', 'arm64-v8a', '{density=2.25,height=720,width=1280}', 'ZONG'
-
-device = {
-    'android_version': android_version,
-    'model': model,
-    'build': build,
-    'fblc': 'en_US',
-    'fbmf': fbmf,
-    'fbbd': fbbd,
-    'fbdv': model,
-    'fbsv': android_version,
-    'fbca': fbca,
-    'fbdm': fbdm
-}
 
 def ugenX():
     ualist = [ua.random for _ in range(50)]
@@ -1544,8 +1497,6 @@ def get_cookie_string(session):
     cookies = session.cookies.get_dict()
     return ";".join([f"{k}={v}" for k, v in cookies.items()])
 
-# ============ MAIN.PY CODE END ============
-
 # ============ BOT CODE START ============
 
 def _gh_headers():
@@ -1555,7 +1506,7 @@ def load_from_github():
     if not GITHUB_TOKEN:
         return
     try:
-        r = _requests.get(GITHUB_API, headers=_gh_headers(), params={"ref": GITHUB_BRANCH}, timeout=10)
+        r = requests.get(GITHUB_API, headers=_gh_headers(), params={"ref": GITHUB_BRANCH}, timeout=10)
         if r.status_code == 200:
             content = base64.b64decode(r.json()["content"]).decode("utf-8")
             with open(USERS_FILE, "w") as f:
@@ -1570,7 +1521,7 @@ def sync_to_github():
         with open(USERS_FILE, "r") as f:
             content = f.read()
         encoded = base64.b64encode(content.encode("utf-8")).decode("utf-8")
-        r = _requests.get(GITHUB_API, headers=_gh_headers(), params={"ref": GITHUB_BRANCH}, timeout=10)
+        r = requests.get(GITHUB_API, headers=_gh_headers(), params={"ref": GITHUB_BRANCH}, timeout=10)
         sha = r.json().get("sha") if r.status_code == 200 else None
         payload = {
             "message": "chore: sync users.json",
@@ -1579,7 +1530,7 @@ def sync_to_github():
         }
         if sha:
             payload["sha"] = sha
-        _requests.put(GITHUB_API, headers=_gh_headers(), json=payload, timeout=10)
+        requests.put(GITHUB_API, headers=_gh_headers(), json=payload, timeout=10)
     except Exception:
         pass
 
