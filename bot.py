@@ -1,30 +1,31 @@
 import os
-import json
-import asyncio
-import logging
-import base64
+import sys
 import re
 import random
 import string
 import time
+import json
+import platform
 import requests
+import subprocess
 import imaplib
 import email
 from email.header import decode_header
+from typing import Set, Optional
 from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 from faker import Faker
 import pyotp
+import logging
 import threading
 import html
-import sys
-import subprocess
-import platform
+import asyncio
+import base64
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand, BotCommandScopeChat
 
 # ============ BOT CONFIGURATION ============
 BOT_TOKEN = "8101206245:AAENv9gxlh_T2RnXoZuA9Ljztss2OY5vvVY"
@@ -42,7 +43,7 @@ GITHUB_API    = f"https://api.github.com/repos/{GITHUB_REPO}/contents/users.json
 
 USERS_FILE = "users.json"
 
-# ============ MAIN.PY CODE START ============
+# ============ MAIN.PY CODE (COMPLETE - NO CHANGES) ============
 # Setup logging
 logging.basicConfig(level=logging.INFO, filename="app.log", format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -346,6 +347,57 @@ def confirm_account_with_auto_otp(session, email_address, max_retries=3):
                 return success, uid, cookies_dict, manual_otp
     return False, None, None, None
 
+# File storage functions
+def save_to_file(data: str, file_path: str):
+    full_path = file_path
+    os.makedirs(os.path.dirname(full_path) or ".", exist_ok=True)
+    with open(full_path, "a", encoding="utf-8") as f:
+        f.write(data + "\n")
+
+def install_dependencies():
+    try:
+        import pyotp
+    except ImportError:
+        logging.warning("pyotp not installed. Installing...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "pyotp"])
+        except Exception as e:
+            logging.error(f"Failed to install pyotp: {e}")
+            print(f"{R}Failed to install pyotp: {e}{W}")
+            sys.exit(1)
+
+def clear_screen():
+    os.system('cls' if platform.system().lower() == 'windows' else 'clear')
+
+# Device information
+try:
+    android_version = subprocess.check_output('getprop ro.build.version.release', shell=True).decode('utf-8').strip()
+    model = subprocess.check_output('getprop ro.product.model', shell=True).decode('utf-8').strip()
+    build = subprocess.check_output('getprop ro.build.id', shell=True).decode('utf-8').strip()
+    fbmf = subprocess.check_output('getprop ro.product.manufacturer', shell=True).decode('utf-8').strip()
+    fbbd = subprocess.check_output('getprop ro.product.brand', shell=True).decode('utf-8').strip()
+    fbca = subprocess.check_output('getprop ro.product.cpu.abilist', shell=True).decode('utf-8').replace(',', ':').strip()
+    fbdm = f"{{density=2.25,height={subprocess.check_output('getprop ro.hwui.text_large_cache_height', shell=True).decode('utf-8').strip()},width={subprocess.check_output('getprop ro.hwui.text_large_cache_width', shell=True).decode('utf-8').strip()}}}"
+    try:
+        fbcr = subprocess.check_output('getprop gsm.operator.alpha', shell=True).decode('utf-8').split(',')[0].strip()
+    except:
+        fbcr = 'ZONG'
+except:
+    android_version, model, build, fbmf, fbbd, fbca, fbdm, fbcr = '10', 'Unknown', 'Unknown', 'Unknown', 'Unknown', 'arm64-v8a', '{density=2.25,height=720,width=1280}', 'ZONG'
+
+device = {
+    'android_version': android_version,
+    'model': model,
+    'build': build,
+    'fblc': 'en_US',
+    'fbmf': fbmf,
+    'fbbd': fbbd,
+    'fbdv': model,
+    'fbsv': android_version,
+    'fbca': fbca,
+    'fbdm': fbdm
+}
+
 def ugenX():
     ualist = [ua.random for _ in range(50)]
     return str(random.choice(ualist))
@@ -425,7 +477,6 @@ for generate in range(100):
         e=random.randrange(40,150)
         uaku=f'Mozilla/5.0 (Linux; Android {a}.{b}; Pixel {b}) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/{c}.0.{d}.{e} Mobile Safari/537.36'
         ugen.append(uaku)
-
 
 # Name and password generation
 first_names_male = [
@@ -1343,6 +1394,47 @@ def extractor(data):
             data[name] = value
     return data
 
+def banner():
+    clear_screen()
+    print(f"""{G}
+ █████╗ ██╗   ██╗████████╗ ██████╗       {R}███████╗██████╗ 
+██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗      {R}██╔════╝██╔══██╗
+███████║██║   ██║   ██║   ██║   ██║      {R}█████╗  ██████╔╝
+██╔══██║██║   ██║   ██║   ██║   ██║      {R}██╔══╝  ██╔══██╗
+██║  ██║╚██████╔╝   ██║   ╚██████╔╝      {R}██║     ██████╔╝
+╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝       {R}╚═╝     ╚═════╝
+            {W}A U T O  –  F B
+{W}─────────────────────────────────────────────{W}
+{W}[{G}•{W}]{G} DEVELOPER {W}:{R} netz
+{W}[{G}•{W}]{G} FACEBOOK  {W}:{R} netz
+{W}[{G}•{W}]{G} GITHUB    {W}:{R} netz
+{W}[{G}•{W}]{G} TOOL      {W}:{R} AUTO-FB
+{W}─────────────────────────────────────────────{W}""")
+
+def linex():
+    print(f"{W}─────────────────────────────────────────────{W}")
+
+oks = []
+cps = []
+
+def check_facebook_profile_picture(uid):
+    pic_url = f"https://graph.facebook.com/{uid}/picture?type=normal"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36"
+    }
+    try:
+        response = requests.get(pic_url, headers=headers, allow_redirects=False, timeout=10)
+        if response.status_code == 302:
+            redirect_url = response.headers.get("Location", "")
+            if "scontent" in redirect_url:
+                return "live"
+            else:
+                return "not_live"
+        else:
+            return
+    except requests.RequestException as e:
+        return 
+
 def generate_yandex_alias(account_name):
     import time as _time
     clean_name = re.sub(r'[^a-zA-Z0-9]', '', account_name.lower())
@@ -1350,6 +1442,362 @@ def generate_yandex_alias(account_name):
     random_suffix = random.randint(100, 999)
     alias = f"{clean_name[:20]}{timestamp}{random_suffix}"
     return f"{YANDEX_EMAIL.split('@')[0]}+{alias}@yandex.com"
+
+def createfb_method_1():
+    global oks, cps
+    banner()
+    print(f"{W}[{G}1{W}]{G} FILIPINO NAMES")
+    print(f"{W}[{G}2{W}]{G} RPW NAMES")
+    linex()
+    name_choice = input(f"{W}[{G}•{W}]{G} CHOISE {W}:{G} ")
+    linex()
+    num = int(input(f"{W}[{G}•{W}]{G} HOW MANY ACCOUNT {W}:{G} "))
+    linex()
+    print(f"{W}[{G}1{W}]{G} AUTO PASSWORD")
+    print(f"{W}[{G}2{W}]{G} CUSTOM PASSWORD")
+    linex()
+    password_choice = input(f"{W}[{G}•{W}]{G} CHOISE {W}:{G} ")
+    pww = get_pass() if password_choice == '1' else input(f"{W}[{G}•{W}]{G} ENTER PASSWORD {W}:{G} ")
+    linex()
+    show_details = input(f"{W}[{G}•{W}]{G} Show All Details y{R}/{G}n {W}:{G} ").lower()
+    banner()
+    print(f"{W}[{G}•{W}]{G} ACCOUNT CREATING STARTED")
+    print(f'{W}[{G}•{W}]{G} TOTAL ID {W}: {R}{num}{W}')
+    print(f"{W}[{G}•{W}]{G} Use {R}1.1.1{G} Vpn{W}")
+    linex()
+
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    lock = threading.Lock()
+    done = [0]
+
+    def _create_one():
+        while True:
+            with lock:
+                if done[0] >= num:
+                    return
+            try:
+                ses = requests.Session()
+                response = ses.get("https://x.facebook.com/reg", timeout=15)
+                form = extractor(response.text)
+
+                if not form.get("lsd") and not form.get("fb_dtsg"):
+                    time.sleep(3)
+                    continue
+
+                firstname, lastname = get_rpw_name() if name_choice == '2' else get_bd_name()
+                account_name = f"{firstname}{lastname}{random.randint(10, 999)}"
+                email = generate_yandex_alias(account_name)
+
+                payload = {
+                    'ccp': "2",
+                    'reg_instance': form.get("reg_instance", ""),
+                    'submission_request': "true",
+                    'reg_impression_id': form.get("reg_impression_id", ""),
+                    'ns': "1",
+                    'logger_id': form.get("logger_id", ""),
+                    'firstname': firstname,
+                    'lastname': lastname,
+                    'birthday_day': str(random.randint(15, 25)),
+                    'birthday_month': str(random.randint(5, 10)),
+                    'birthday_year': str(random.randint(1985, 1995)),
+                    'reg_email__': email,
+                    'sex': "1",
+                    'encpass': f'#PWD_BROWSER:0:{int(time.time())}:{pww}',
+                    'submit': "Sign Up",
+                    'fb_dtsg': form.get("fb_dtsg", ""),
+                    'jazoest': form.get("jazoest", ""),
+                    'lsd': form.get("lsd", "")
+                }
+
+                merged_headers = {
+                    "Host": "m.facebook.com",
+                    "Connection": "keep-alive",
+                    "User-Agent": ugenX(),
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Encoding": "gzip, deflate, br",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    'referer': 'https://mbasic.facebook.com/reg/',
+                    'sec-ch-ua': '',
+                    'sec-ch-ua-mobile': '?1',
+                    'sec-ch-ua-platform': 'Android',
+                    'sec-fetch-dest': 'document',
+                    'sec-fetch-mode': 'navigate',
+                    'sec-fetch-site': 'same-origin',
+                    'sec-fetch-user': '?1',
+                    'upgrade-insecure-requests': '1',
+                }
+
+                reg_submit = ses.post("https://www.facebook.com/reg/submit/", data=payload, headers=merged_headers, timeout=20)
+                login_coki = ses.cookies.get_dict()
+                response_text = reg_submit.text
+
+                if "checkpoint" in response_text.lower() or "confirm" in response_text.lower() or "code" in response_text.lower():
+                    print(f"{Y}[!] Verification required for {email}, polling for OTP...{W}")
+                    success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp(ses, email)
+                    if success and uid:
+                        coki = ";".join([f"{k}={v}" for k, v in cookies_dict.items()])
+                        with lock:
+                            if done[0] >= num:
+                                return
+                            done[0] += 1
+                            current = done[0]
+                            oks.append(uid)
+                            if show_details == 'y':
+                                print(f"\n{W}[{G}•{W}] Name   : {G}{firstname} {lastname}{W}")
+                                print(f"{W}[{G}•{W}] Email  : {G}{email}{W}")
+                                print(f"{W}[{G}•{W}] OTP    : {G}{otp_code}{W}")
+                                print(f"{W}[{G}•{W}] UID    : {G}{uid}{W}")
+                                print(f"{W}[{G}•{W}] PASS   : {G}{pww}{W}")
+                                print(f"{W}[{G}•{W}] COOKIES: {G}{coki}{W}")
+                                print(f"{W}─────────────────────────────────────────────{W}")
+                            else:
+                                print(f"\n{G}CYBER-X{W}-{G}[OK] {current}/{num} | {uid} | {pww} | OTP:{otp_code}")
+                            try:
+                                with open('accounts.txt', 'a') as f:
+                                    f.write(f"{uid}|{pww}|{email}|{coki}|OTP:{otp_code}\n")
+                            except Exception:
+                                pass
+                    else:
+                        with lock:
+                            cps.append(email)
+                        print(f"{R}[!] Verification failed for {email}{W}")
+                
+                elif "c_user" in login_coki:
+                    uid = login_coki["c_user"]
+                    coki = ";".join([f"{k}={v}" for k, v in login_coki.items()])
+                    
+                    time.sleep(3)
+                    check_resp = ses.get("https://mbasic.facebook.com/me/", allow_redirects=True)
+                    if "checkpoint" in check_resp.text.lower() or "confirm" in check_resp.text.lower():
+                        print(f"{Y}[!] Post-creation verification needed, fetching OTP...{W}")
+                        success, uid2, cookies_dict, otp_code = confirm_account_with_auto_otp(ses, email)
+                        if success and uid2:
+                            uid = uid2
+                            coki = ";".join([f"{k}={v}" for k, v in cookies_dict.items()])
+                    
+                    with lock:
+                        if done[0] >= num:
+                            return
+                        done[0] += 1
+                        current = done[0]
+                        oks.append(uid)
+                        if show_details == 'y':
+                            print(f"\n{W}[{G}•{W}] Name   : {G}{firstname} {lastname}{W}")
+                            print(f"{W}[{G}•{W}] Email  : {G}{email}{W}")
+                            if 'otp_code' in locals() and otp_code:
+                                print(f"{W}[{G}•{W}] OTP    : {G}{otp_code}{W}")
+                            print(f"{W}[{G}•{W}] UID    : {G}{uid}{W}")
+                            print(f"{W}[{G}•{W}] PASS   : {G}{pww}{W}")
+                            print(f"{W}[{G}•{W}] COOKIES: {G}{coki}{W}")
+                            print(f"{W}─────────────────────────────────────────────{W}")
+                        else:
+                            otp_display = f" | OTP:{otp_code}" if 'otp_code' in locals() and otp_code else ""
+                            print(f"\n{G}CYBER-X{W}-{G}[OK] {current}/{num} | {uid} | {pww}{otp_display}")
+                        try:
+                            with open('accounts.txt', 'a') as f:
+                                otp_part = f"|OTP:{otp_code}" if 'otp_code' in locals() and otp_code else ""
+                                f.write(f"{uid}|{pww}|{email}|{coki}{otp_part}\n")
+                        except Exception:
+                            pass
+                else:
+                    pass
+                    
+            except Exception as e:
+                time.sleep(2)
+
+    WORKERS = 5
+    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
+        futures = [pool.submit(_create_one) for _ in range(WORKERS)]
+        for f in futures:
+            f.result()
+    
+    print(' ')
+    linex()
+    print(f'{W}[{G}•{W}]{G} The process has completed')
+    linex()
+    print(f'{W}[{G}•{W}]{G} Total OK {W}: {G}{len(oks)}')
+    print(f'{W}[{R}•{W}]{G} Total CP {W}: {R}{len(cps)}')
+    linex()
+    input(f'{W}[{G}•{W}]{G} Press Enter to go back to menu... {W}')
+
+def register_account(domain_choice, name_option="1", gender_option="3", custom_pass=None, max_retries=5):
+    for attempt in range(max_retries):
+        try:
+            ses = requests.Session()
+            response = ses.get("https://x.facebook.com/reg", timeout=15)
+            form = extractor(response.text)
+
+            if not form.get("lsd") and not form.get("fb_dtsg"):
+                time.sleep(3)
+                continue
+
+            if name_option == "2":
+                firstname, lastname = get_rpw_name()
+            else:
+                if gender_option == "1":
+                    firstname = random.choice(first_names_male)
+                elif gender_option == "2":
+                    firstname = random.choice(first_names_female)
+                else:
+                    firstname = random.choice(first_names_male + first_names_female)
+                lastname = random.choice(surnames)
+
+            if gender_option == "1":
+                fb_sex = "2"
+            elif gender_option == "2":
+                fb_sex = "1"
+            else:
+                fb_sex = random.choice(["1", "2"])
+
+            import time as _time
+            account_name = f"{firstname}{lastname}{int(_time.time())}{random.randint(100, 999)}"
+            email = generate_yandex_alias(account_name)
+            pww = custom_pass if custom_pass else get_pass()
+
+            payload = {
+                'ccp': "2",
+                'reg_instance': form.get("reg_instance", ""),
+                'submission_request': "true",
+                'reg_impression_id': form.get("reg_impression_id", ""),
+                'ns': "1",
+                'logger_id': form.get("logger_id", ""),
+                'firstname': firstname,
+                'lastname': lastname,
+                'birthday_day': str(random.randint(15, 25)),
+                'birthday_month': str(random.randint(5, 10)),
+                'birthday_year': str(random.randint(1985, 1995)),
+                'reg_email__': email,
+                'sex': fb_sex,
+                'encpass': f'#PWD_BROWSER:0:{int(_time.time())}:{pww}',
+                'submit': "Sign Up",
+                'fb_dtsg': form.get("fb_dtsg", ""),
+                'jazoest': form.get("jazoest", ""),
+                'lsd': form.get("lsd", ""),
+            }
+
+            headers = {
+                "Host": "m.facebook.com",
+                "Connection": "keep-alive",
+                "User-Agent": ugenX(),
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Accept-Language": "en-US,en;q=0.9",
+                'referer': 'https://mbasic.facebook.com/reg/',
+                'sec-ch-ua-mobile': '?1',
+                'sec-ch-ua-platform': 'Android',
+                'sec-fetch-dest': 'document',
+                'sec-fetch-mode': 'navigate',
+                'sec-fetch-site': 'same-origin',
+                'upgrade-insecure-requests': '1',
+            }
+
+            reg_submit = ses.post("https://www.facebook.com/reg/submit/", data=payload, headers=headers, timeout=20)
+            login_coki = ses.cookies.get_dict()
+            response_text = reg_submit.text
+            response_lower = response_text.lower()
+
+            if "c_user" in login_coki:
+                time.sleep(3)
+                check_resp = ses.get("https://mbasic.facebook.com/me/", allow_redirects=True)
+                if "checkpoint" in check_resp.text.lower():
+                    success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp(ses, email)
+                    if success and uid:
+                        cookie_str = ";".join([f"{k}={v}" for k, v in cookies_dict.items()])
+                        return {
+                            "name": f"{firstname} {lastname}",
+                            "email": email,
+                            "password": pww,
+                            "uid": uid,
+                            "cookies": cookie_str,
+                            "session": ses,
+                            "otp_fetched": True,
+                            "otp_code": otp_code
+                        }
+                    else:
+                        continue
+                else:
+                    cookie_str = ";".join([f"{k}={v}" for k, v in login_coki.items()])
+                    return {
+                        "name": f"{firstname} {lastname}",
+                        "email": email,
+                        "password": pww,
+                        "uid": login_coki["c_user"],
+                        "cookies": cookie_str,
+                        "session": ses,
+                        "otp_fetched": False,
+                        "otp_code": None
+                    }
+            
+            otp_keywords = ["checkpoint", "confirm", "code", "verification"]
+            needs_otp = any(kw in response_lower for kw in otp_keywords)
+            
+            if needs_otp:
+                success, uid, cookies_dict, otp_code = confirm_account_with_auto_otp(ses, email)
+                if success and uid:
+                    cookie_str = ";".join([f"{k}={v}" for k, v in cookies_dict.items()])
+                    return {
+                        "name": f"{firstname} {lastname}",
+                        "email": email,
+                        "password": pww,
+                        "uid": uid,
+                        "cookies": cookie_str,
+                        "session": ses,
+                        "otp_fetched": True,
+                        "otp_code": otp_code
+                    }
+                else:
+                    continue
+
+        except Exception as e:
+            print(f"[DEBUG] Registration error: {e}")
+        
+        time.sleep(2)
+    
+    return None
+
+def confirm_account_with_otp(session, response_text, otp_code):
+    try:
+        soup = BeautifulSoup(response_text, 'html.parser')
+        form = soup.find('form')
+        if not form:
+            return None
+        
+        action = form.get('action', '')
+        if not action.startswith('http'):
+            action = 'https://www.facebook.com' + action
+        
+        fields = {}
+        for inp in form.find_all('input'):
+            name = inp.get('name')
+            value = inp.get('value', '')
+            if name:
+                fields[name] = value
+        
+        for key in ['code', 'confirm_code', 'n', 'otp', 'verification_code', 'confirmation_code']:
+            if key in fields:
+                fields[key] = otp_code
+                break
+        
+        confirm_res = session.post(action, data=fields, timeout=15)
+        cookies = session.cookies.get_dict()
+        
+        if 'c_user' in cookies:
+            cookie_str = ";".join([f"{k}={v}" for k, v in cookies.items()])
+            return {
+                "uid": cookies["c_user"],
+                "cookies": cookie_str,
+                "session": session
+            }
+        return None
+    except Exception as e:
+        print(f"[DEBUG] OTP confirmation error: {e}")
+        return None
+
+def get_cookie_string(session):
+    cookies = session.cookies.get_dict()
+    return ";".join([f"{k}={v}" for k, v in cookies.items()])
 
 def register_account_for_bot(domain_choice="yandex", name_option="1", gender_option="3", custom_pass=None, max_retries=5):
     """Single account creation for Telegram bot - ALWAYS fetches and shows OTP"""
@@ -1493,9 +1941,17 @@ def register_account_for_bot(domain_choice="yandex", name_option="1", gender_opt
     
     return None
 
-def get_cookie_string(session):
-    cookies = session.cookies.get_dict()
-    return ";".join([f"{k}={v}" for k, v in cookies.items()])
+def method():
+    while True:
+        banner()
+        print(f"{W}[{G}1{W}]{G} Auto Create Fb ")
+        linex()
+        choice = input(f"{W}[{G}•{W}]{G} CHOISE {W}:{G} ").strip()
+        if choice == '1':
+            createfb_method_1()
+        else:
+            print(f"{R}Invalid choice!{W}")
+            input(f"{W}[{G}•{W}]{G} Press Enter to continue ")
 
 # ============ BOT CODE START ============
 
